@@ -276,6 +276,16 @@ def test_jobs_tab_button_opens_designer():
         jw.running = False
         d.editor.document().setModified(False)
         d.close()
+        # closing deletes the window (WA_DeleteOnClose); the button must open a new one again, several times
+        from qtpy.QtCore import QEvent, QCoreApplication
+        for _ in range(3):
+            QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete); app.processEvents()
+            jw.btn_designer.click(); app.processEvents()
+            assert 'Could not open' not in jw.log.toPlainText(), jw.log.toPlainText()
+            d2 = jw.designer
+            assert d2 is not None and d2.isVisible(), 'designer did not reopen after closing'
+            d2.editor.document().setModified(False)
+            d2.close()
     finally:
         os.chdir(cwd)
 

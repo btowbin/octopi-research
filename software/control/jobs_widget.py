@@ -278,6 +278,12 @@ class JobsWidget(QFrame):
         """Open (or bring to the front) the Job designer window; it uses the positions and channels of this program for its tests."""
         try:
             win = getattr(self, 'designer', None)
+            if win is not None:
+                try:
+                    win.isVisible()  # raises RuntimeError if the closed window was already deleted (WA_DeleteOnClose)
+                except RuntimeError:
+                    win = None
+                    self.designer = None
             if win is None or not win.isVisible():
                 from control.jobs_designer import JobDesignerWindow
                 path = self.lineEdit_job.text().strip()
@@ -285,12 +291,17 @@ class JobsWidget(QFrame):
                                         job_path=path if os.path.isfile(path) else None, example_dir=EXAMPLE_DIR if os.path.isdir(EXAMPLE_DIR) else None,
                                         use_job_callback=self.use_job_from_designer)
                 win.setAttribute(Qt.WA_DeleteOnClose, True)
+                win.destroyed.connect(self._designer_destroyed)
                 self.designer = win
             win.show()
             win.raise_()
             win.activateWindow()
         except Exception:
             self._say('Could not open the Job designer:\n' + traceback.format_exc())
+
+    def _designer_destroyed(self, *args):
+        """The designer window was closed and deleted: forget it so that it can be opened again."""
+        self.designer = None
 
     def _positions_for_designer(self):
         pw = self.positionsWidget

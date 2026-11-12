@@ -156,7 +156,11 @@ class CameraROIWidget(QFrame):
 
         offset_x = max(0, ((sensor_w - width) // 2) // 8 * 8)
         offset_y = max(0, ((sensor_h - height) // 2) // 8 * 8)
-        self.camera.set_ROI(offset_x=offset_x, offset_y=offset_y, width=width, height=height)
+        # offsets to 0 first so that the new size always fits (the maximum width/height of e.g. a FLIR
+        # camera is sensor size minus the CURRENT offset), then the size, then the centred offsets
+        self.camera.set_ROI(offset_x=0, offset_y=0)
+        self.camera.set_ROI(width=width, height=height)
+        self.camera.set_ROI(offset_x=offset_x, offset_y=offset_y)
         print(f'Camera ROI set: offset_x={offset_x}, offset_y={offset_y}, width={width}, height={height}')
         self._apply_software_crops(width, height)
 

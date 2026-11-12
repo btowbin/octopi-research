@@ -339,8 +339,16 @@ class JobsWidget(QFrame):
         except Exception:
             return self._say('Internal error in the job check:\n' + traceback.format_exc())
         self.log.appendPlainText('--- check of ' + os.path.basename(path) + ' ---\n' + describe(res))
-        self.label_status.setText('Job OK (dry run)' if res.status == 'completed' else 'Job has a problem: ' + (res.error.splitlines()[0] if res.error else res.status))
+        self.label_status.setText(self._check_status_text(res))
         return res
+
+    @staticmethod
+    def _check_status_text(res):
+        if res.status != 'completed':
+            return 'Job has a problem: ' + (res.error.splitlines()[0] if res.error else res.status)
+        if getattr(res, 'incomplete', False):
+            return 'Job OK, but only the first part could be tested (dry run limit): see the log'
+        return 'Job OK (dry run)'
 
     def show_plan(self):
         """Dry run with recording and a graphical display of the plan."""
@@ -357,7 +365,7 @@ class JobsWidget(QFrame):
         except Exception:
             return self._say('Internal error in the job plan:\n' + traceback.format_exc())
         self.log.appendPlainText('--- plan of ' + os.path.basename(path) + ' ---\n' + describe(res))
-        self.label_status.setText('Job OK (dry run)' if res.status == 'completed' else 'Job has a problem: ' + (res.error.splitlines()[0] if res.error else res.status))
+        self.label_status.setText(self._check_status_text(res))
         if res.status != 'completed' and not res.events:
             self._say('The job could not be drawn: ' + (res.error or res.status))
         try:
@@ -405,7 +413,10 @@ class JobsWidget(QFrame):
         used = list(res.stats.get('per_channel', {}))
         from control.acq_summary import confirm_start
         if not confirm_start(self, 'job', self.mpc, used or [c.name for c in self.configurationManager.configurations],
-                             extra=f'{len(self._points())} positions; the job will take an estimated {res.duration_s / 60:.0f} min and take {res.stats.get("images", 0)} images.'):
+                             extra=(f'{len(self._points())} positions. WARNING: the dry run was stopped at its operation limit, so only the first '
+                                    f'{res.duration_s / 3600:.1f} h of the job could be tested; the end of the job was not checked and the real job will take longer '
+                                    f'and take more images than the {res.stats.get("images", 0)} images counted so far.') if getattr(res, 'incomplete', False)
+                             else f'{len(self._points())} positions; the job will take an estimated {res.duration_s / 60:.0f} min and take {res.stats.get("images", 0)} images.'):
             self.btn_start.setChecked(False)
             self.label_status.setText('Job not started (cancelled).')
             return

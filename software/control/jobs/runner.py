@@ -9,9 +9,13 @@ import traceback
 import subprocess
 from dataclasses import dataclass, field
 
-from control.jobs.api import Scope, JobError, JobAborted, SimClock, RealClock, make_points
+from control.jobs.api import Scope, JobError, JobAborted, DryRunLimit, SimClock, RealClock, make_points
 from control.jobs.dryrun import DryRunBackend
 
+# Limit of the DRY RUN only (check / plan / test), a real run has no limit (max_events=None). The dry run uses
+# simulated time, so a job with an endless loop would never end; it is stopped after this many scope operations
+# (a move, capture, autofocus, wait, ... counts as one). A job that reaches the limit is NOT refused: the dry run
+# reports "only partly tested" (JobResult.incomplete + a warning) and the job can still be started.
 DRY_RUN_MAX_EVENTS = 200000
 
 
@@ -24,6 +28,7 @@ class JobResult:
     warnings: list = field(default_factory=list)
     events: list = field(default_factory=list)      # planned operations (dry run with record=True), see plot.py
     error_line: int = None                          # line of the job file where the problem is (None if unknown); used by the job designer
+    incomplete: bool = False                        # dry run only: stopped at DRY_RUN_MAX_EVENTS, the rest of the job was not tested (status stays 'completed')
 
 
 def _load_module(path):
@@ -141,6 +146,14 @@ def run_job(job_path, points, backend, experiment_dir=None, clock=None, save_ima
         except JobAborted:
             res.status = 'aborted'
             scope.log('job aborted by the user')
+        except DryRunLimit as e:
+            # not an error: the dry run only checks the beginning of a very long job (a real run has no limit)
+            res.status, res.incomplete = 'completed', True
+            res.warnings.append(
+                f'The dry run was stopped after {e.n_operations} operations (the limit of the test; a real run has no limit). '
+                f'Only the first {scope.elapsed / 3600.0:.1f} h of the job (time point {scope.stats.get("timepoints", 0)}) could be tested: '
+                'the rest of the job could not be tested, and the duration and image numbers shown cover only that part. '
+                'A job with an endless loop would look the same.')
         except JobError as e:
             res.status, res.error = 'failed', str(e)
             res.error_line = _user_line(job_path)
@@ -192,7 +205,7 @@ def dry_run(job_path, points, channel_infos, record=False, **backend_kwargs):
 def describe(result):
     """Human readable summary of a (dry-run) result."""
     s = result.stats or {}
-    lines = [f'status: {result.status}']
+    lines = [f'status: {result.status}' + (' (only partly tested, see the warning below)' if getattr(result, 'incomplete', False) else '')]
     if result.error:
         lines.append('error: ' + result.error)
     if s:
@@ -201,7 +214,7 @@ def describe(result):
         if s.get('per_group'):
             lines.append('per group: ' + ', '.join(f'{g}: {n}' for g, n in s['per_group'].items()))
         lines.append(f'autofocus runs: {s.get("autofocus", 0)}   moves: {s.get("moves", 0)}   time points: {s.get("timepoints", 0)}')
-        lines.append(f'duration: {result.duration_s / 60:.1f} min ({h:.2f} h)')
+        lines.append(f'duration: {result.duration_s / 60:.1f} min ({h:.2f} h)' + (' (only the part that was tested)' if getattr(result, 'incomplete', False) else ''))
         if s.get('paused_s'):
             lines.append(f'time spent paused: {s["paused_s"]:.0f} s (not counted in the job time)')
         if s.get('late_timepoints'):
@@ -217,7 +230,7 @@ def _write_positions(path, points):
         w = csv.writer(f)
         w.writerow(['index', 'id', 'group', 'number_in_group', 'x_mm', 'y_mm', 'z_mm'])
         for p in points:
-            w.writerow([p.index, p.id, p.group, p.number, p.x, p.y, p.z])
+            w.writerow([p.index, p.index, p.group, p.number, p.x, p.y, p.z])    # id column = row number (as point_index), group = what was typed
 
 
 def _write_meta(experiment_dir, meta, job_path, started, status, scope, result=None):

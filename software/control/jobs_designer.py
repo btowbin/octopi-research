@@ -1257,7 +1257,11 @@ class JobDesignerWindow(QMainWindow):
         n_tp = s.get('timepoints', 0)
         self.spin_tp.setRange(0, max(0, n_tp - 1))
         # status line
-        if ok:
+        if ok and getattr(res, 'incomplete', False):
+            head = (f'⚠ Test stopped at its operation limit: only the first {fmt_dur(res.duration_s)} of the job ({n_tp} time points, '
+                    f'{s.get("images", 0)} images) could be tested. The job can still be started.')
+            self.plan_status.setStyleSheet('color: #e67700; font-weight: bold')
+        elif ok:
             head = (f'✔ Test passed: {s.get("images", 0)} images, {s.get("autofocus", 0)} autofocus runs, {n_tp} time points, '
                     f'estimated duration {fmt_dur(res.duration_s)}')
             self.plan_status.setStyleSheet('color: #2b8a3e; font-weight: bold')
@@ -1285,7 +1289,9 @@ class JobDesignerWindow(QMainWindow):
 
     def _output_html(self, run, res, ok):
         h = [apidoc.CSS]
-        if ok:
+        if ok and getattr(res, 'incomplete', False):
+            h.append('<h3 style="color:#e67700">⚠ Test passed only partly: the job is longer than the test allows</h3>')
+        elif ok:
             h.append('<h3 style="color:#2b8a3e">✔ Test passed</h3>')
         else:
             h.append(f'<h3 style="color:#c0392b">✖ Test {html.escape(res.status)}</h3>')

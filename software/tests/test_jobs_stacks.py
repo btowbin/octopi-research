@@ -445,8 +445,8 @@ def test_single_files_follow_flexible_multipoint_layout_and_ver_counter():
     ''', pts(1), save_as='single')
     assert res.status == 'completed', res.error
     n = _names(out)
-    assert n == ['0/A-0_0_0_0_Fluorescence_488_nm_Ex.tiff', '0/A-0_0_0_0_Fluorescence_488_nm_Ex_ver_2.tiff',
-                 '1/A-0_0_0_0_Fluorescence_488_nm_Ex.tiff', '1/A-0_0_0_0_Fluorescence_488_nm_Ex_ver_2.tiff'], n
+    assert n == ['0/0_0_0_0_Fluorescence_488_nm_Ex.tiff', '0/0_0_0_0_Fluorescence_488_nm_Ex_ver_2.tiff',
+                 '1/0_0_0_0_Fluorescence_488_nm_Ex.tiff', '1/0_0_0_0_Fluorescence_488_nm_Ex_ver_2.tiff'], n
     assert all(os.path.isfile(os.path.join(out, f)) for f in n)
 
 
@@ -473,8 +473,8 @@ def test_zstack_and_movie_names_multipage_and_single():
     ''', pts(1))
     assert res.status == 'completed', res.error
     n = sorted(set(_names(out, table='frames')))
-    assert n == ['0/A-0_0_0_0_Fluorescence_488_nm_Ex.tiff', '0/A-0_0_0_0_Fluorescence_488_nm_Ex_Movie_F0000.tiff',
-                 '0/A-0_0_0_0_Fluorescence_488_nm_Ex_Movie_F0001.tiff', '0/A-0_0_0_1_Fluorescence_488_nm_Ex.tiff',
+    assert n == ['0/0_0_0_0_Fluorescence_488_nm_Ex.tiff', '0/0_0_0_0_Fluorescence_488_nm_Ex_Movie_F0000.tiff',
+                 '0/0_0_0_0_Fluorescence_488_nm_Ex_Movie_F0001.tiff', '0/0_0_0_1_Fluorescence_488_nm_Ex.tiff',
                  'Time0000_Point0000_Movie.tiff', 'Time0000_Point0000_Zstack.tiff'], n
     assert all(os.path.isfile(os.path.join(out, f)) for f in n)
 

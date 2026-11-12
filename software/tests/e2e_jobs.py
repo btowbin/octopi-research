@@ -189,7 +189,7 @@ def main():
             record('job 1 image count', len(im) == exp_images, f'{len(im)} vs {exp_images}')
             record('job 1 all image files exist', all(os.path.isfile(os.path.join(d, r['file'])) for r in im))
             record('job 1 one multipage file per point and time point (Time0000_Point0000.tiff, ...)', len({r['file'] for r in im}) == 3 * n and im[0]['file'] == 'Time0000_Point0000.tiff', str(sorted({r['file'] for r in im})[:3]))
-            record('job 1 images carry point IDs and groups', {r['group'] for r in im} == {'A', 'B'} and im[0]['point_id'] == 'A-0')
+            record('job 1 images carry the row number as ID and the groups', {r['group'] for r in im} == {'A', 'B'} and im[0]['point_id'] == '0' and all(r['point_id'] == r['point_index'] for r in im))
             af = rows(d, 'autofocus')
             exp_af = sum(1 for t in range(3) for p in range(n) if (t + p) % 2 == 0)
             record('job 1 autofocus count (staggered)', len(af) == exp_af, f'{len(af)} vs {exp_af}')

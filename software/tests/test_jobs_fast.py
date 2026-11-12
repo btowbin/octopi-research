@@ -97,7 +97,7 @@ def test_single_and_merge_modes_uncompressed():
     ''')
     assert res.status == 'completed', res.error
     d0 = sorted(os.listdir(os.path.join(out, '0')))
-    assert d0 == [f'A-0_0_0_0_Fluorescence_488_nm_Ex_FastMovie_F000{i}.tiff' for i in range(3)], d0
+    assert d0 == [f'0_0_0_0_Fluorescence_488_nm_Ex_FastMovie_F000{i}.tiff' for i in range(3)], d0
     with tifffile.TiffFile(os.path.join(out, '0', d0[0])) as tf:
         assert tf.pages[0].compression.name == 'NONE'
     with tifffile.TiffFile(os.path.join(out, 'm.tiff')) as tf:

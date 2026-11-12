@@ -91,6 +91,49 @@ def test_groups_and_ids():
     assert [x.index for x in p] == [0, 1, 2, 3, 4]
 
 
+def old_standard_name(row, channel, k=0):
+    """File name (without the time point folder) of the previous software's standard Flexible Multipoint acquisition:
+    core.py MultiPointWorker: name = str(row number) + '_', file_ID = name + i + '_' + j + '_' + k, file = file_ID + '_' + channel(' ' -> '_') + '.tiff'"""
+    file_id = str(row) + '_' + str(0) + '_' + str(0) + '_' + str(k)
+    return file_id + '_' + channel.replace(' ', '_') + '.tiff'
+
+
+def test_single_file_names_and_csv_id_columns_use_the_row_number():
+    # groups 1, 1a, 2, 2a with two positions each; the table stores '1-0', '1-1', '1a-0', ... ("Set group(s)" with "add number")
+    ids = ['1-0', '1-1', '1a-0', '1a-1', '2-0', '2-1', '2a-0', '2a-1']
+    p = make_points(ids, [(i * 1.0, 2.0, 3.0) for i in range(8)])
+    res, be, out = run('''
+        def run_job(scope):
+            for t in scope.timepoints(2, interval=100):
+                for g in ("1", "1a", "2", "2a"):                 # groups are referred to by name, as before
+                    for pt in scope.points(g):
+                        scope.move_to(pt)
+                        if pt.number == 0:
+                            scope.autofocus()
+                        scope.capture("BF")
+    ''', p, save_as='single')
+    assert res.status == 'completed', res.error
+    assert [pt.id for pt in p][:3] == ['1-0', '1-1', '1a-0']                       # the points themselves are unchanged
+    assert [pt.group for pt in p] == ['1', '1', '1a', '1a', '2', '2', '2a', '2a'] and [pt.number for pt in p] == [0, 1] * 4
+    im = rows(out, 'images')
+    assert len(im) == 16
+    for r in im:
+        row = int(r['point_index'])
+        assert r['point_id'] == str(row)                                            # ID column = row number, point_index unchanged
+        assert r['group'] == ['1', '1', '1a', '1a', '2', '2', '2a', '2a'][row]      # group = what was typed
+        assert r['file'].replace('\\', '/') == f"{r['timepoint']}/" + old_standard_name(row, 'BF LED matrix full'), r['file']
+    assert sorted({r['file'].replace('\\', '/') for r in im if r['timepoint'] == '0'}) == sorted(f'0/{i}_0_0_0_BF_LED_matrix_full.tiff' for i in range(8))
+    assert all(os.path.isfile(os.path.join(out, r['file'])) for r in im)
+    for table in ('positions_initial', 'positions_final'):
+        pr = rows(out, table)
+        assert [r['index'] for r in pr] == [str(i) for i in range(8)] and [r['id'] for r in pr] == [str(i) for i in range(8)]
+        assert [r['group'] for r in pr] == ['1', '1', '1a', '1a', '2', '2', '2a', '2a'] and [r['number_in_group'] for r in pr] == ['0', '1'] * 4
+    af = rows(out, 'autofocus')
+    assert len(af) == 8 and list(af[0])[-1] == 'group'                               # new column, appended at the end
+    assert [r['point_id'] for r in af[:4]] == ['0', '2', '4', '6'] and [r['group'] for r in af[:4]] == ['1', '1a', '2', '2a']
+    assert all(r['point_id'] == r['point_index'] for r in af)
+
+
 def test_loop_files_and_metadata():
     res, be, out = run('''
         def run_job(scope):
@@ -105,8 +148,8 @@ def test_loop_files_and_metadata():
     r = rows(out, 'images')
     assert len(r) == 12 and len({x['file'] for x in r}) == 12      # unique file names
     assert all(os.path.isfile(os.path.join(out, x['file'])) for x in r)
-    assert r[0]['point_id'] == 'A-0' and r[0]['timepoint'] == '0' and r[0]['x_mm'] == '0.0'
-    assert r[0]['file'].replace('\\', '/') == '0/A-0_0_0_0_BF_LED_matrix_full.tiff', r[0]['file']      # single files: <time point>/<ID>_0_0_<z>_<channel>.tiff
+    assert r[0]['point_id'] == '0' and r[0]['timepoint'] == '0' and r[0]['x_mm'] == '0.0'
+    assert r[0]['file'].replace('\\', '/') == '0/0_0_0_0_BF_LED_matrix_full.tiff', r[0]['file']      # single files: <time point>/<row number>_0_0_<z>_<channel>.tiff
     for f in ('job.py', 'job_log.txt', 'job_meta.json', 'positions_initial.csv', 'positions_final.csv'):
         assert os.path.isfile(os.path.join(out, f)), f
     meta = json.load(open(os.path.join(out, 'job_meta.json')))
@@ -313,10 +356,43 @@ def test_dry_run_reports_plan_and_warnings():
     assert not any('exposure' in w for w in res.warnings)
 
 
-def test_dry_run_catches_endless_loop():
+def test_dry_run_stops_endless_loop_with_warning():
+    # the limit only protects the dry run (simulated time); it is a warning, the job is not refused
     job = make_job('def run_job(scope):\n    while True:\n        scope.wait(1)\n')
     res = dry_run(job, pts(1), CHANNELS)
-    assert res.status == 'failed' and 'did not finish' in res.error
+    assert res.status == 'completed' and res.incomplete and not res.error
+    assert any('could not be tested' in w for w in res.warnings), res.warnings
+    assert 'only partly tested' in describe(res)
+
+
+LONG_JOB = '''
+def run_job(scope):
+    for t in scope.timepoints(120, interval=3600):
+        for pt in scope.points():
+            scope.move_to(pt)
+            scope.capture("488")
+            scope.capture("BF")
+'''
+
+
+def test_dry_run_longer_than_limit_is_only_a_warning():
+    # lifespan scale: 120 time points x 900 positions x 3 operations = 324000 > 200000 operations
+    res = dry_run(make_job(LONG_JOB), pts(900), CHANNELS)
+    assert res.status == 'completed' and res.incomplete, (res.status, res.error)
+    assert any('could not be tested' in w for w in res.warnings)
+    assert 0 < res.stats['images'] < 120 * 900 * 2
+    # a short job is unaffected
+    res = dry_run(make_job(LONG_JOB.replace('120', '2')), pts(10), CHANNELS)
+    assert res.status == 'completed' and not res.incomplete and not res.warnings
+
+
+def test_real_run_has_no_operation_limit():
+    # run_job without max_events (as the real run in core.py) must do all 324000 operations
+    from control.jobs.dryrun import DryRunBackend
+    clock = SimClock()
+    res = run_job(make_job(LONG_JOB), pts(900), DryRunBackend(CHANNELS, clock=clock), experiment_dir=None, clock=clock, save_images=False)
+    assert res.status == 'completed' and not res.incomplete, (res.status, res.error)
+    assert res.stats['images'] == 120 * 900 * 2
 
 
 def test_plan_recording_and_figure():

@@ -87,7 +87,7 @@ structure, not exact timing. If the job fails, the figure shows everything up to
 * **Live check while typing** (`control/jobs/lint.py`): syntax errors, typos (`scope.captur`, `pt.indx`), wrong arguments, unknown channel names
   (also in `CHANNELS = [...]` at the top), unknown groups, a loop over positions without `move_to`, `time.sleep` (cannot be aborted), undefined names.
   Problems are underlined, marked in the margin and listed in the *Problems* tab.
-* **Test (F5):** runs the job in a dry run (simulated microscope and time, so a 2-day job takes a moment; a job stuck in an endless loop is stopped after 30 s).
+* **Test (F5):** runs the job in a dry run (simulated microscope and time, so a 2-day job takes a moment; a job stuck in an endless loop is stopped after 30 s). The dry run stops after 200000 scope operations (`DRY_RUN_MAX_EVENTS` in `control/jobs/runner.py`); a longer job (e.g. a lifespan experiment with many positions) is then reported as *only partly tested* with a warning, but it is **not refused** and can be started; a real run has no such limit.
   *Output* shows the summary, warnings, `print()` output and `scope.log()` messages. If the job fails, the line is marked in the editor.
   *Step list* lists every operation with time and line; double click jumps to the line.
 * **Plan graphic** (no matplotlib needed): timeline per position (ticks = images coloured by channel, triangles/boxes = autofocus, grey = moves,
@@ -199,17 +199,17 @@ ends the experiment cleanly. Errors found by the dry run prevent the start.
 | file | content |
 |---|---|
 | `Time0000_Point0000.tiff`, ... | **multipage / merge** (*Save as* in the JOBs tab, default "multipage TIFF, written directly"; `save_as="multipage"`, `"merge"` or `"single"` per call; with "merge" every image is first written as a single file and merged into this file later, while the job waits or at the end, then deleted): ONE file per point and time point with all images taken there (channels as pages; `capture`, `capture_channels`), `..._Zstack.tiff`, `..._Movie.tiff`; flat in the experiment folder. Images outside a time-point loop use `Time0000` |
-| `0/`, `1/`, ... | **single files** (*Save as* single files): folder per time point (`0/` outside `scope.timepoints`), `<point ID>_0_0_<z plane>_<channel>.tiff` as in the Flexible Multipoint tab; movie frames `<ID>_0_0_0_<channel>_Movie_F0012.tiff` |
+| `0/`, `1/`, ... | **single files** (*Save as* single files): folder per time point (`0/` outside `scope.timepoints`), `<row number>_0_0_<z plane>_<channel>.tiff` as in the Flexible Multipoint tab (row number = 0-based position in the positions table; the typed group/ID is not part of the name); movie frames `<ID>_0_0_0_<channel>_Movie_F0012.tiff` |
 | `_ver_2`, `_ver_3` | appended when a name already exists (e.g. the same channel captured twice at a point). `filename="my_name"` (no extension) replaces the automatic name in `capture`, `capture_channels`, `zstack`, `movie`; single files then get `my_name_<channel>`, `my_name_Z0005_<channel>`, `my_name_F0012_<channel>` |
 | `lossy_files.csv` | one row per lossy file: quality, target and achieved compression, codec error and image noise (counts) |
 | `fast_frames.csv` | one row per frame of a fast movie: file, frame, camera frame number, camera time, interval to the previous frame |
 | `frames.csv` | one row per image of a z-stack or movie: file, kind, frame/z/t index, channel, job time, time since the start of the stack/movie, stage x/y/z, exposure, gain, intensity |
-| `images.csv` | one row per single image (`capture`): file, time since start, wall time, time point, point index/ID/group, channel, actual stage x/y/z, exposure, gain, intensity |
-| `autofocus.csv` | one row per autofocus: time, point, channel, z before/after, duration |
+| `images.csv` | one row per single image (`capture`): file, time since start, wall time, time point, point index, point ID (= the row number, same as the index), group (as typed), channel, actual stage x/y/z, exposure, gain, intensity |
+| `autofocus.csv` | one row per autofocus: time, point index, point ID (= row number), time point, channel, z before/after, duration, group (last column) |
 | `job.py` | copy of the job file that was run |
 | `job_log.txt` | what happened and when (incl. late time points, warnings) |
 | `job_meta.json` | status (completed/aborted/failed), duration, counts, warnings, software commit |
-| `positions_initial.csv`, `positions_final.csv` | positions before the job and with the z values after autofocus |
+| `positions_initial.csv`, `positions_final.csv` | positions before the job and with the z values after autofocus (columns: index, id (= row number), group (as typed), number_in_group, x, y, z) |
 | `configurations.xml`, `acquisition parameters.json` | as in the standard acquisition |
 
 ## Limits of this first version

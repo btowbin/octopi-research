@@ -68,7 +68,7 @@ API = [
                   'upper/lower case does not matter (<code>"488"</code> finds <i>Fluorescence 488 nm Ex</i>). '
                   'Unknown or ambiguous names are errors and the message lists the choices.<br><br>'
                   'Exposure, gain and illumination intensity come from the channel configuration (see the <i>Test setup</i> panel). '
-                  '<b>File names</b> and <b>save_as</b> (default: the <i>Save as</i> setting of the JOBs tab; a call can override it): <code>"multipage"</code> = ''<code>Time0003_Point0002.tiff</code> in the experiment folder, ONE file for all images taken at that point and time point (channels as pages; written directly from memory when the job moves on); ''<code>"merge"</code> = every image is first written as its own file, and the single files are merged into that multipage file later (while the job waits, or at the end) and then deleted ''(less memory, safer for very large images; lossy compression is applied at the merge); ''<code>"single"</code> = one file per image, <code>3/A-2_0_0_0_Fluorescence_488_nm_Ex.tiff</code> (time point folder, point ID, 0_0_z, channel; as the Flexible Multipoint tab). ''A name that already exists gets <code>_ver_2</code>, <code>_ver_3</code>, ... <b>filename="my_name"</b> replaces the automatic name (no extension), e.g. for special cases where the automatic name is ambiguous. ''Everything is listed in <code>images.csv</code>.<br><br>'
+                  '<b>File names</b> and <b>save_as</b> (default: the <i>Save as</i> setting of the JOBs tab; a call can override it): <code>"multipage"</code> = ''<code>Time0003_Point0002.tiff</code> in the experiment folder, ONE file for all images taken at that point and time point (channels as pages; written directly from memory when the job moves on); ''<code>"merge"</code> = every image is first written as its own file, and the single files are merged into that multipage file later (while the job waits, or at the end) and then deleted ''(less memory, safer for very large images; lossy compression is applied at the merge); ''<code>"single"</code> = one file per image, <code>3/2_0_0_0_Fluorescence_488_nm_Ex.tiff</code> (time point folder, row number of the position in the table, 0_0_z, channel; as the Flexible Multipoint tab). ''A name that already exists gets <code>_ver_2</code>, <code>_ver_3</code>, ... <b>filename="my_name"</b> replaces the automatic name (no extension), e.g. for special cases where the automatic name is ambiguous. ''Everything is listed in <code>images.csv</code>.<br><br>'
                   '<b>compression</b>: <code>"lossless"</code> (default; zlib-compressed TIFF, identical pixel values) or <code>"lossy"</code> '
                   '(16-bit JPEG2000 inside the TIFF, much smaller files, but part of the camera noise is removed). '
                   'The default is a <b>noise-relative quality</b>: for every channel the quality is chosen automatically, just before writing (in the background), so that the '
@@ -112,7 +112,7 @@ API = [
                   'but more channel switching).<br><br>'
                   'The stage always scans upwards (increasing z) and returns to the centre afterwards (also after Abort). '
                   'The z offset of each channel from the channel configuration is added to its plane positions, as in the standard acquisition.<br><br>'
-                  'File (multipage): <code>Time0003_Point0002_Zstack.tiff</code> (<code>save_as="single"</code>: one file per image, <code>3/A-2_0_0_&lt;plane&gt;_&lt;channel&gt;.tiff</code>; <code>filename="name"</code>: <code>name_Z0005_&lt;channel&gt;</code>; existing names get <code>_ver_2</code>), axes Z and C, with the real z position, time and exposure of every page in the OME metadata '
+                  'File (multipage): <code>Time0003_Point0002_Zstack.tiff</code> (<code>save_as="single"</code>: one file per image, <code>3/2_0_0_&lt;plane&gt;_&lt;channel&gt;.tiff</code>; <code>filename="name"</code>: <code>name_Z0005_&lt;channel&gt;</code>; existing names get <code>_ver_2</code>), axes Z and C, with the real z position, time and exposure of every page in the OME metadata '
                   'and in <code>frames.csv</code>. <b>compression</b> / <b>quality</b> as in <code>capture</code> (default lossless; lossy = JPEG2000 inside the multipage TIFF). '
                   'The whole stack is held in memory until it is written (limit 4 GB).'),
          params=[('channels', 'channel name or list of names'), ('planes', 'number of planes'), ('step_um', 'distance between planes (um)'),
@@ -138,7 +138,7 @@ API = [
                   'The movie is held in memory and written after the last frame (limit 4 GB; about 300 full 16-bit frames). '
                   'Pause takes effect after the movie, Abort stops it at once (nothing is saved). '
                   '<b>compression</b> / <b>quality</b> as in <code>capture</code>: lossy JPEG2000 is encoded in the background while the job continues.<br><br>'
-                  'File (multipage): <code>Time0003_Point0002_Movie.tiff</code> (<code>save_as="single"</code>: one file per image, <code>3/A-2_0_0_0_&lt;channel&gt;_Movie_F0012.tiff</code>; <code>filename="name"</code>: <code>name_F0012_&lt;channel&gt;</code>); time points of the job are separate files, one movie per call.'),
+                  'File (multipage): <code>Time0003_Point0002_Movie.tiff</code> (<code>save_as="single"</code>: one file per image, <code>3/2_0_0_0_&lt;channel&gt;_Movie_F0012.tiff</code>; <code>filename="name"</code>: <code>name_F0012_&lt;channel&gt;</code>); time points of the job are separate files, one movie per call.'),
          params=[('channels', 'channel name or list of names'), ('frames', 'number of rounds'), ('interval_s', 'seconds from the start of one round to the start of the next'),
                  ('duration_s', 'total duration in seconds (needs interval_s; instead of frames)'),
                  ('compression', '"lossless" (default) or "lossy"'), ('quality', 'lossy only: PSNR in dB (default 60)'),
@@ -164,7 +164,7 @@ API = [
                   'The movie must fit in memory (limit 4 GB: 2000x2000 at 8 bit = 1000 frames = 40 s at 25 fps). '
                   'Abort keeps the frames recorded so far; Pause takes effect after the movie.<br><br>'
                   'File: <code>Time0003_Point0002_FastMovie.tiff</code>, uncompressed (<code>compression="lossless"</code> or <code>"lossy"</code> are possible and slow '
-                  'to write). <code>save_as</code> and <code>filename</code> as for <code>movie</code> (single files: <code>3/A-2_0_0_0_&lt;channel&gt;_FastMovie_F0012.tiff</code>). '
+                  'to write). <code>save_as</code> and <code>filename</code> as for <code>movie</code> (single files: <code>3/2_0_0_0_&lt;channel&gt;_FastMovie_F0012.tiff</code>). '
                   'Only for FLIR cameras (other cameras: software-triggered frames, slow and irregular).'),
          params=[('channel', 'channel name'), ('fps', 'frames per second'), ('duration_s', 'duration in seconds (instead of frames)'), ('frames', 'number of frames'),
                  ('roi', 'region in the centre of the sensor: side length or (width, height) in pixels; None = current'), ('bits', '8 or 16; None = current'),
@@ -258,7 +258,7 @@ API = [
 
 OBJECTS = [
     dict(name='Point', description='One imaging position. You get Points from <code>scope.points()</code>.',
-         attrs=[('id', 'text', 'the ID typed in the positions table, e.g. "A-3" ("" if none)'),
+         attrs=[('id', 'text', 'the text typed in the positions table, e.g. "A-3" ("" if none); file names and the csv ID columns use the row number (index) instead'),
                 ('group', 'text', 'part of the ID before the first "-" ("default" if the ID is empty)'),
                 ('index', 'int', 'position in the table, starting at 0 (all points)'),
                 ('number', 'int', 'position within its group, starting at 0'),

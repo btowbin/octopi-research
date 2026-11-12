@@ -1,7 +1,7 @@
 """Hourly 6-week time lapse: 488 + 561 + BF, staggered autofocus and staggered BF movies every 6 hours."""
 
 # ---- settings: edit these ------------------------------------------------------------------
-CHANNELS = ["488", "561", "BF LED matrix full"]   # imaged in this order at every position and time point
+CHANNELS = ["405", "488", "561", "BF LED matrix full"]   # imaged in this order at every position and time point
 AF_CHANNEL = "561"                                # channel used for the autofocus
 AF_FOCUS_MEASURE = "focus_measure_normalized_variance.py::normalized_variance"   # maximal normalized variance (file in the software folder)
 MOVIE_CHANNEL = "BF LED matrix full"
@@ -14,7 +14,7 @@ MOVIE_FRAME_INTERVAL_S = 1.0
 
 def run_job(scope):
     """WHAT IT DOES: all positions of the Flexible Multipoint table are imaged every hour for 6 weeks (IDs / groups are ignored).
-    At every time point each position is imaged in 488, 561 and BF, in this order.
+    At every time point each position is imaged in 405, 488, 561 and BF, in this order.
     Autofocus (channel 561, focus measure = maximal normalized variance) runs
       - at the FIRST time point at ALL positions, and
       - afterwards staggered: a position with table index k is refocused at the time points t >= 1 where (t + k) is a

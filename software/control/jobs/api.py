@@ -32,6 +32,15 @@ class JobAborted(BaseException):
     `except Exception:` does not swallow it."""
 
 
+class DryRunLimit(BaseException):
+    """Raised inside a DRY RUN only (never in a real run) when the job has done more scope operations than the
+    test allows. Not an error of the job: the runner reports the dry run as 'only partly tested'.
+    BaseException for the same reason as JobAborted."""
+    def __init__(self, n_operations):
+        super().__init__(n_operations)
+        self.n_operations = n_operations
+
+
 # ------------------------------------------------------------------------------------------------
 # clocks (real and simulated, the latter for dry runs and tests)
 # ------------------------------------------------------------------------------------------------
@@ -81,7 +90,7 @@ class Point:
     """One imaging position. x, y, z in mm (stage coordinates). z is updated after an autofocus."""
 
     def __init__(self, id, group, index, number, x, y, z):
-        self.id = id              # the ID typed in the positions table, e.g. 'wellA-3' ('' if none)
+        self.id = id              # the text typed in the positions table, e.g. 'wellA-3' ('' if none); NOT used in file names / csv ID columns (row number = index)
         self.group = group        # part of the ID before the first '-'  ('default' if the ID is empty)
         self.index = index        # 0-based position in the table (all points)
         self.number = number      # 0-based position within its group
@@ -382,7 +391,7 @@ class Scope:
         self.check_abort()
         self._events += 1
         if self._max_events and self._events > self._max_events:
-            raise JobError(f'the job did not finish after {self._max_events} operations (endless loop?)')
+            raise DryRunLimit(self._max_events)
         if self._backend.pause_requested():
             self._pause_now(restore)
 
@@ -541,9 +550,9 @@ class Scope:
         self.stats['autofocus'] += 1
         self._rec('autofocus', t_start, point=pt, channel=ch)
         self._write_row('autofocus', dict(
-            time_s=round(t_start, 2), point_index=pt.index if pt else '', point_id=pt.id if pt else '',
+            time_s=round(t_start, 2), point_index=pt.index if pt else '', point_id=pt.index if pt else '',
             timepoint=self._tp.index if self._tp else '', channel=ch or '', z_before_mm=z_before, z_after_mm=z_after,
-            duration_s=round(self.elapsed - t_start, 2)))
+            duration_s=round(self.elapsed - t_start, 2), group=pt.group if pt else ''))
         return z_after
 
     # --- imaging -----------------------------------------------------------------------------
@@ -591,7 +600,7 @@ class Scope:
 
     # --- file names ---------------------------------------------------------------------------
     # multipage (default):  <experiment>/Time0003_Point0002[_Zstack|_Movie].tiff   (all channels of the call in one file)
-    # single files:         <experiment>/<time point>/<point ID>_0_0_<k>_<channel>.tiff   (as the Flexible Multipoint tab; k = z plane)
+    # single files:         <experiment>/<time point>/<row number>_0_0_<k>_<channel>.tiff   (as the Flexible Multipoint tab; row number of the position in the table, 0-based; k = z plane)
     # a name that already exists gets the ending _ver_2, _ver_3, ...; filename=... replaces the whole name (without extension)
     _SAVE_AS = ('multipage', 'merge', 'single')
 
@@ -629,7 +638,9 @@ class Scope:
 
     def _region(self):
         pt = self._name_point()
-        return _safe(pt.id) if (pt is not None and pt.id) else (str(pt.index) if pt is not None else 'stage')
+        # as the standard (Flexible Multipoint) acquisition of the previous software: the typed ID never enters the file name,
+        # the name of a position is its row number in the positions table (0-based), e.g. 3/17_0_0_0_<channel>.tiff
+        return str(pt.index) if pt is not None else 'stage'
 
     def _new_path(self, base, ext='.tiff', single=False):
         """Unique file path: in the experiment folder (multipage) or in the folder of the time point (single files); _ver_N if the name exists."""
@@ -762,7 +773,7 @@ class Scope:
                 rel = os.path.relpath(path, self._dir)
         self._write_row('images', dict(
             image_id=self._image_counter, file=rel, time_s=round(t_cap, 2), wall_time=datetime.datetime.now().isoformat(timespec='milliseconds'),
-            timepoint=tp.index if tp else '', point_index=pt.index if pt else '', point_id=pt.id if pt else '',
+            timepoint=tp.index if tp else '', point_index=pt.index if pt else '', point_id=pt.index if pt else '',
             group=pt.group if pt else '', channel=ch, x_mm=info.get('x_mm', ''), y_mm=info.get('y_mm', ''), z_mm=info.get('z_mm', ''),
             exposure_ms=info.get('exposure_ms', ''), gain=info.get('gain', ''), intensity=info.get('intensity', '')))
         return image
@@ -861,7 +872,7 @@ class Scope:
                 rel = os.path.relpath(os.path.dirname(spath), self._dir) + f' ({len(files)} files)' if files else ''
         for r, f in zip(rows, files):
             self._write_row('frames', dict(
-                file=f, kind=kind, timepoint=tp.index if tp else '', point_index=pt.index if pt else '', point_id=pt.id if pt else '',
+                file=f, kind=kind, timepoint=tp.index if tp else '', point_index=pt.index if pt else '', point_id=pt.index if pt else '',
                 group=pt.group if pt else '', **r))
         return rel
 
@@ -894,7 +905,7 @@ class Scope:
                 self.check_abort()
                 self._events += 1
                 if self._max_events and self._events > self._max_events:
-                    raise JobError(f'the job did not finish after {self._max_events} operations (endless loop?)')
+                    raise DryRunLimit(self._max_events)
                 self._move_z(zs[ch][i], state)
                 image, info, t_cap = self._grab(ch)
                 if data is None:
@@ -953,7 +964,7 @@ class Scope:
             self.check_abort()
             self._events += 1
             if self._max_events and self._events > self._max_events:
-                raise JobError(f'the job did not finish after {self._max_events} operations (endless loop?)')
+                raise DryRunLimit(self._max_events)
             if interval_s is not None and n > 0:
                 target = t_begin + n * interval_s
                 self._state('waiting', until=target, reason='movie')
@@ -1035,7 +1046,7 @@ class Scope:
         self.check_abort()
         self._events += 1
         if self._max_events and self._events > self._max_events:
-            raise JobError(f'the job did not finish after {self._max_events} operations (endless loop?)')
+            raise DryRunLimit(self._max_events)
         t_begin = self.elapsed
         self._state('capturing', point=self._current_point.index if self._current_point else None, channel=ch)
         res = self._backend.fast_movie(ch, frames, float(fps), bits=bits, roi=roi, exposure_ms=exposure_ms, gain=gain)

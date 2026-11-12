@@ -671,8 +671,13 @@ STARTUP_DEFAULT_WELLPLATE_FORMAT = 12  # 0 (glass slide), 6, 12, 24, 96, 384, 15
 STARTUP_DEFAULT_EXPOSURE_MS = None     # None: every illumination keeps the exposure stored in channel_configurations.xml (a number: that exposure for ALL at startup)
 STARTUP_DEFAULT_AF_N_PLANES = 10       # contrast autofocus: number of planes
 STARTUP_DEFAULT_AF_DELTA_Z_UM = 2.5    # contrast autofocus: step between planes (um)
+STARTUP_DEFAULT_PIXEL_FORMAT = 'MONO16'  # camera mode at startup (MONO8/MONO12/MONO14/MONO16/...); None: use default_pixel_format of the .ini
+STARTUP_DEFAULT_ROI_WIDTH = 2096       # camera ROI width at startup (px, centred on the sensor, rounded to a multiple of 8, limited to the sensor size); None: keep the camera's ROI
+STARTUP_DEFAULT_ROI_HEIGHT = 2048      # camera ROI height at startup (px, same rules); None: keep the camera's ROI
 if STARTUP_DEFAULT_OBJECTIVE is not None and STARTUP_DEFAULT_OBJECTIVE in OBJECTIVES:
     DEFAULT_OBJECTIVE = STARTUP_DEFAULT_OBJECTIVE
+if STARTUP_DEFAULT_PIXEL_FORMAT is not None:
+    DEFAULT_PIXEL_FORMAT = STARTUP_DEFAULT_PIXEL_FORMAT
 if STARTUP_DEFAULT_WELLPLATE_FORMAT is not None:
     WELLPLATE_FORMAT = STARTUP_DEFAULT_WELLPLATE_FORMAT
 

@@ -8,6 +8,7 @@ cropping: autofocus crop = acquisition (saving) crop = display crop = ROI.
 import json
 import os
 from qtpy.QtWidgets import QFrame, QGridLayout, QLabel, QSpinBox, QComboBox, QCheckBox
+from control._def import STARTUP_DEFAULT_ROI_WIDTH, STARTUP_DEFAULT_ROI_HEIGHT
 
 OPTIONS_FILE = os.path.join('cache', 'camera_options.json')
 
@@ -41,6 +42,16 @@ class CameraROIWidget(QFrame):
         self.spin_width.setValue(width)
         self.spin_height.setValue(height)
         self._apply_software_crops(width, height)
+
+        # startup default ROI (_def.STARTUP_DEFAULT_ROI_WIDTH / _HEIGHT; None keeps the camera's ROI):
+        # set on the camera exactly as if typed into the spin boxes (the signals are not connected
+        # yet, so update_roi is called explicitly)
+        if STARTUP_DEFAULT_ROI_WIDTH is not None or STARTUP_DEFAULT_ROI_HEIGHT is not None:
+            if STARTUP_DEFAULT_ROI_WIDTH is not None:
+                self.spin_width.setValue(self.valid_size(STARTUP_DEFAULT_ROI_WIDTH, sensor_w))
+            if STARTUP_DEFAULT_ROI_HEIGHT is not None:
+                self.spin_height.setValue(self.valid_size(STARTUP_DEFAULT_ROI_HEIGHT, sensor_h))
+            self.update_roi()
 
         self.dropdown_pixel_format = QComboBox()
         formats = ['MONO8', 'MONO12', 'MONO14', 'MONO16']

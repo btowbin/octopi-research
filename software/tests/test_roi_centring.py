@@ -103,7 +103,7 @@ def new_widget(cam):
     w = types.SimpleNamespace(camera=cam, spin_width=Spin(0), spin_height=Spin(0), label_actual=Label(),
                               stream_handler=Handler(), autofocus_controller=Handler(),
                               multipoint_controller=types.SimpleNamespace(crop_width=None, crop_height=None))
-    for name in ('update_roi', '_write_roi', 'check_roi', '_read_hw_roi', '_sensor_size', '_apply_software_crops', '_show_status',
+    for name in ('update_roi', '_write_roi', 'check_roi', 'check_roi_if_idle', '_read_hw_roi', '_sensor_size', '_apply_software_crops', '_show_status',
                  'centred_offset', 'valid_size'):
         f = CameraROIWidget.__dict__[name]
         setattr(w, name, f.__func__ if isinstance(f, staticmethod) else types.MethodType(f, w))
@@ -207,6 +207,74 @@ def test_camera_that_cannot_report_its_roi_works_as_before():
     assert cam.calls[0] == dict(offset_x=0, offset_y=0) and cam.calls[1] == dict(width=1000, height=800)
     assert cam.calls[2] == dict(offset_x=(SENSOR_W - 1000) // 2 // 8 * 8, offset_y=(SENSOR_H - 800) // 2 // 8 * 8)
     assert w.stream_handler.crop == (1000, 800) and w.check_roi() is True
+
+
+def test_no_check_inside_a_running_experiment():
+    """The ROI is checked once when an experiment / job starts, never while it runs (live view restarts after an autofocus etc.)."""
+    cam, fake = new_camera()
+    w = new_widget(cam)
+    w.spin_width.v, w.spin_height.v = 2096, 2048
+    w.update_roi()
+    cam.set_ROI(offset_x=0, offset_y=0)
+    running = [True]
+    w.multipoint_controller.acquisition_running = lambda: running[0]
+    assert w.check_roi_if_idle() is True and centre_error(fake)[0] > 100, 'running: nothing read, nothing written'
+    running[0] = False
+    assert w.check_roi_if_idle() is True
+    assert_centred_and_crops_equal(w, fake, 'idle')
+
+
+def _source(path, cls, func):
+    """Source of one method, taken from the real file without importing control.core (it needs Qt, cv2, ...)."""
+    import ast
+    text = open(os.path.join(SW, 'control', path), encoding='utf-8').read()
+    for node in ast.walk(ast.parse(text)):
+        if isinstance(node, ast.ClassDef) and node.name == cls:
+            for f in node.body:
+                if isinstance(f, ast.FunctionDef) and f.name == func:
+                    return ast.get_source_segment(text, f), text
+    raise AssertionError(f'{cls}.{func} not found in {path}')
+
+
+def test_live_start_checks_the_roi_first():
+    """LiveController.start_live runs the check before anything else: an off-centre ROI is repaired when live view is switched on."""
+    src, _ = _source('core.py', 'LiveController', 'start_live')
+    import textwrap
+    ns = {'TriggerMode': types.SimpleNamespace(SOFTWARE=1, HARDWARE=2), 'MCU_PINS': types.SimpleNamespace(AF_LASER=0)}
+    exec(textwrap.dedent(src), ns)
+    cam, fake = new_camera()
+    w = new_widget(cam)
+    w.spin_width.v, w.spin_height.v = 2096, 2048
+    w.update_roi()
+    cam.set_ROI(offset_x=0, offset_y=0)                 # drift between 'set positions' and 'live'
+    assert centre_error(fake)[0] > 100
+    order = []
+    live = types.SimpleNamespace(is_live=False, trigger_mode=0, use_internal_timer_for_hardware_trigger=False, for_displacement_measurement=False,
+                                 camera=types.SimpleNamespace(is_live=False, start_streaming=lambda: order.append(('streaming', centre_error(fake)[0]))),
+                                 before_live_hook=lambda: (order.append('hook'), w.check_roi()))
+    ns['start_live'](live)
+    assert order[0] == 'hook' and order[1] == ('streaming', 0.0) or order[1][1] <= CENTRE_TOLERANCE_PX, order
+    assert_centred_and_crops_equal(w, fake, 'after live start')
+    # a failing hook must not stop live view
+    live.before_live_hook = lambda: 1 / 0
+    live.is_live = False
+    ns['start_live'](live)
+    assert live.is_live is True
+
+
+def test_every_acquisition_and_job_start_checks_the_roi_before_the_crops_are_copied():
+    """Flexible Multipoint (MultiPointWidget2), standard multipoint, JOBs and Single measurement all start through
+    MultiPointController.run_acquisition; the check must come before live is stopped and before the worker copies the crops."""
+    src, text = _source('core.py', 'MultiPointController', 'run_acquisition')
+    assert 'before_start_hook' in src
+    hook = src.index('before_start_hook')
+    assert hook < src.index('stop_live()') and hook < src.index('MultiPointWorker(self)'), 'hook must come first'
+    _, rj = _source('core.py', 'MultiPointController', 'run_job')
+    assert 'self.run_acquisition(' in rj, 'jobs start through run_acquisition'
+    widgets_text = open(os.path.join(SW, 'control', 'widgets.py'), encoding='utf-8').read()
+    assert widgets_text.count('self.multipointController.run_acquisition(self.location_list)') >= 1     # flexible multipoint
+    for name in ('jobs_widget.py', 'single_measurement_widget.py'):
+        assert 'mpc.run_job(' in open(os.path.join(SW, 'control', name), encoding='utf-8').read(), name
 
 
 if __name__ == '__main__':

@@ -571,6 +571,14 @@ class LiveController(QObject):
                 print('not setting emission filter position due to ' + str(e))
 
     def start_live(self):
+        # optional check before live view starts (set by CameraROIWidget): the hardware ROI must be centred.
+        # Done first, while is_live is still False, so no live frame is handled while the ROI is corrected.
+        hook = getattr(self, 'before_live_hook', None)
+        if hook is not None:
+            try:
+                hook()
+            except Exception as e:
+                print('*** camera ROI check before live view failed: ' + str(e))
         self.is_live = True
         self.camera.is_live = True
         self.camera.start_streaming()

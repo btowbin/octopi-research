@@ -254,6 +254,16 @@ class CameraROIWidget(QFrame):
         self._show_status(text, warning=not centred)
         return centred
 
+    def check_roi_if_idle(self):
+        """check_roi, but only when no experiment / job is running: used when live view is switched on (live view is also restarted
+        inside a running experiment, e.g. after an autofocus; the ROI is checked once at the START of an experiment, never during it)."""
+        try:
+            if self.multipoint_controller is not None and self.multipoint_controller.acquisition_running():
+                return True
+        except Exception:
+            pass
+        return self.check_roi()
+
     def _show_status(self, text, warning=False):
         label = getattr(self, 'label_actual', None)
         if label is not None:

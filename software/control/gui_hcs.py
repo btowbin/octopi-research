@@ -279,6 +279,7 @@ class OctopiGUI(QMainWindow):
 
         # Camera tab: centred hardware ROI (the only crop) and camera mode; replaces widgets.CameraSettingsWidget
         self.cameraROIWidget = CameraROIWidget(self.camera,self.streamHandler,self.multipointController,self.autofocusController)
+        self.liveController.before_live_hook = self.cameraROIWidget.check_roi_if_idle # centred ROI whenever live view is switched on (not inside a running experiment)
         self.liveControlWidget = widgets.LiveControlWidget(self.streamHandler,self.liveController,self.configurationManager,show_display_options=True,show_autolevel=True,autolevel=True)
         self.navigationWidget = widgets.NavigationWidget(self.navigationController,self.slidePositionController,widget_configuration=f'{WELLPLATE_FORMAT} well plate')
         self.dacControlWidget = widgets.DACControWidget(self.microcontroller)

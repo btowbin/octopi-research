@@ -1384,6 +1384,12 @@ class Camera(object):
             self._latched_us = None      # the free-running frames used their own exposure: the next real image needs a throw-away frame first
         return out
 
+    def get_ROI(self):
+        """(offset_x, offset_y, width, height) as the camera has them right now. Read-only: the values come from the camera's
+        nodes, not from the cached self.Width / self.OffsetX (those are what was last requested, not what the camera accepted)."""
+        nodemap = self.camera.GetNodeMap()
+        return tuple(int(PySpin.CIntegerPtr(nodemap.GetNode(name)).GetValue()) for name in ('OffsetX', 'OffsetY', 'Width', 'Height'))
+
     def set_ROI(self,offset_x=None,offset_y=None,width=None,height=None):
 
         # stop streaming if streaming is on

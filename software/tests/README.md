@@ -5,6 +5,7 @@ Run from the `software` folder with the venv's Python (`C:\Users\towbi\squid-sim
 | Test | Needs | What it checks | Time |
 |---|---|---|---|
 | `tests/test_features_offscreen.py` | no hardware, no display | AF settings/schedule, camera ROI widget, Positions window (offset, undo, next/previous, move-to-selected), saving-dir warning | seconds |
+| `tests/test_roi_centring.py` | fake PySpin with real Spinnaker ROI limits, no Qt | camera ROI always centred and software crops equal to the hardware ROI: many random changes, a failed write in the middle, drift repaired before an acquisition, fast movie leaves the ROI centred, camera without `get_ROI` unchanged | seconds |
 | `tests/test_schedule_and_files.py` | no hardware | the expectations used by the e2e test agree with the code | seconds |
 | `tests/test_jobs_api.py` | no hardware, no Qt | JOBs scripting core: scheduling (late time points), staggered autofocus, groups, files/metadata, abort and cleanup, error reporting, dry run, plan recording and graph | seconds |
 | `tests/test_jobs_fast.py` | no hardware, no Qt | `scope.fast_movie`: file names and formats (uncompressed multipage / single / merged), `fast_frames.csv`, warnings (lost frames, saturation, dark 8-bit), validation, abort, dry run, lint | seconds |

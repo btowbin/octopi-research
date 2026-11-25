@@ -361,6 +361,10 @@ class Camera(object):
         # self.frameID = self.frameID + 1
         # print(self.frameID)
     
+    def get_ROI(self):
+        """(offset_x, offset_y, width, height) as the camera has them right now (read from the camera). Read-only."""
+        return (int(self.camera.OffsetX.get()), int(self.camera.OffsetY.get()), int(self.camera.Width.get()), int(self.camera.Height.get()))
+
     def set_ROI(self,offset_x=None,offset_y=None,width=None,height=None):
 
         # stop streaming if streaming is on

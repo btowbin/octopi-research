@@ -2947,6 +2947,14 @@ class MultiPointController(QObject):
         self.last_acquisition_error = None
         if not _job:
             self.job_file = None # a standard acquisition never runs a leftover job
+        # optional check before the start (set by CameraROIWidget): the hardware ROI must be centred and equal to the software crops
+        # BEFORE the worker copies the crops below
+        hook = getattr(self, 'before_start_hook', None)
+        if hook is not None:
+            try:
+                hook()
+            except Exception as e:
+                print('*** camera ROI check before the start failed: ' + str(e))
         print('start multipoint')
         print(str(self.Nt) + '_' + str(self.NX) + '_' + str(self.NY) + '_' + str(self.NZ))
 

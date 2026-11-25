@@ -12,6 +12,10 @@ from control._def import STARTUP_DEFAULT_ROI_WIDTH, STARTUP_DEFAULT_ROI_HEIGHT
 
 OPTIONS_FILE = os.path.join('cache', 'camera_options.json')
 
+# The camera rounds the offsets (and the size) to its own increments (up to 16 px on FLIR), so a ROI counts as centred
+# if it is within this many pixels of the exact centre.
+CENTRE_TOLERANCE_PX = 16
+
 
 class CameraROIWidget(QFrame):
 
@@ -25,6 +29,11 @@ class CameraROIWidget(QFrame):
         self.setFrameStyle(QFrame.Panel | QFrame.Raised)
 
         sensor_w, sensor_h = self._sensor_size()
+
+        # what the camera REALLY has (read back from the camera after every change and before every acquisition)
+        self.label_actual = QLabel('')
+        self.label_actual.setStyleSheet('font-size: 8pt; color: gray;')
+        self.label_actual.setWordWrap(True)
 
         self.spin_width = QSpinBox()
         self.spin_width.setRange(16, sensor_w)
@@ -52,6 +61,8 @@ class CameraROIWidget(QFrame):
             if STARTUP_DEFAULT_ROI_HEIGHT is not None:
                 self.spin_height.setValue(self.valid_size(STARTUP_DEFAULT_ROI_HEIGHT, sensor_h))
             self.update_roi()
+        else:
+            self.check_roi(fix=True)    # an off-centre ROI left by an earlier session is centred now
 
         self.dropdown_pixel_format = QComboBox()
         formats = ['MONO8', 'MONO12', 'MONO14', 'MONO16']
@@ -74,6 +85,7 @@ class CameraROIWidget(QFrame):
         grid.addWidget(QLabel('Camera mode'), 1, 0)
         grid.addWidget(self.dropdown_pixel_format, 1, 1)
         grid.addWidget(info, 2, 0, 1, 4)
+        grid.addWidget(self.label_actual, 3, 0, 1, 4)
         self.check_empty_frame = None
         if hasattr(self.camera, 'exposure_lag_fix'):      # FLIR: an exposure takes effect one frame late
             self.check_empty_frame = QCheckBox('Empty frame in between')
@@ -90,13 +102,17 @@ class CameraROIWidget(QFrame):
                 pass
             self.camera.exposure_lag_fix = self.check_empty_frame.isChecked()
             self.check_empty_frame.toggled.connect(self.set_empty_frame)
-            grid.addWidget(self.check_empty_frame, 3, 0, 1, 4)
+            grid.addWidget(self.check_empty_frame, 4, 0, 1, 4)
         grid.setRowStretch(grid.rowCount(), 1)
         self.setLayout(grid)
 
         self.spin_width.valueChanged.connect(self.update_roi)
         self.spin_height.valueChanged.connect(self.update_roi)
         self.dropdown_pixel_format.currentTextChanged.connect(self.set_pixel_format)
+
+        # before every acquisition / job: the hardware ROI must still be centred and equal to the software crops
+        if self.multipoint_controller is not None:
+            self.multipoint_controller.before_start_hook = self.check_roi
 
     def set_empty_frame(self, on):
         self.camera.exposure_lag_fix = bool(on)
@@ -123,6 +139,22 @@ class CameraROIWidget(QFrame):
         except AttributeError:
             width, height = sensor_w, sensor_h
         return int(width), int(height)
+
+    @staticmethod
+    def centred_offset(sensor_size, size):
+        """Offset (multiple of 8) that centres a ROI of this size on the sensor."""
+        return max(0, ((int(sensor_size) - int(size)) // 2) // 8 * 8)
+
+    def _read_hw_roi(self):
+        """(offset_x, offset_y, width, height) as the camera really has them, or None if this camera class cannot tell."""
+        getter = getattr(self.camera, 'get_ROI', None)
+        if getter is None:
+            return None
+        try:
+            return tuple(int(v) for v in getter())
+        except Exception as e:
+            print(f'Camera ROI could not be read back from the camera: {e}')
+            return None
 
     @staticmethod
     def valid_size(value, sensor_size):
@@ -154,15 +186,79 @@ class CameraROIWidget(QFrame):
                 spin.setValue(value)
                 spin.blockSignals(False)
 
-        offset_x = max(0, ((sensor_w - width) // 2) // 8 * 8)
-        offset_y = max(0, ((sensor_h - height) // 2) // 8 * 8)
+        error = None
+        try:
+            self._write_roi(width, height, sensor_w, sensor_h)
+        except Exception as e:      # the three writes are not atomic: a failure can leave the offsets at 0 -> checked and repaired below
+            error = e
+            print(f'*** Camera ROI could not be set to {width} x {height}: {e}')
+        if self._read_hw_roi() is None:
+            # this camera class cannot report its ROI: nothing to verify, trust what was requested (as before)
+            if error is not None:
+                raise error
+            self._apply_software_crops(width, height)
+            return
+        self.check_roi(fix=True)
+        if error is not None:
+            self._show_status(f'ROI change to {width} x {height} FAILED ({error}); the camera keeps the ROI shown here.', warning=True)
+
+    def _write_roi(self, width, height, sensor_w, sensor_h):
+        offset_x = self.centred_offset(sensor_w, width)
+        offset_y = self.centred_offset(sensor_h, height)
         # offsets to 0 first so that the new size always fits (the maximum width/height of e.g. a FLIR
         # camera is sensor size minus the CURRENT offset), then the size, then the centred offsets
         self.camera.set_ROI(offset_x=0, offset_y=0)
         self.camera.set_ROI(width=width, height=height)
         self.camera.set_ROI(offset_x=offset_x, offset_y=offset_y)
         print(f'Camera ROI set: offset_x={offset_x}, offset_y={offset_y}, width={width}, height={height}')
-        self._apply_software_crops(width, height)
+
+    def check_roi(self, fix=True):
+        """Read the ROI back from the camera and compare it with the centred ROI of the same size.
+        fix=True: if it is off centre, centre it again (offsets only, the size is not touched). In every case the spin boxes and
+        all software crops are set to the size the camera REALLY has, so crop = hardware ROI and the image centre is the sensor centre.
+        Called after every ROI change, at start-up and before every acquisition / job. -> True if centred (or if the camera cannot tell)."""
+        actual = self._read_hw_roi()
+        if actual is None:
+            return True
+        sensor_w, sensor_h = self._sensor_size()
+        ox, oy, w, h = actual
+
+        def centre_error(ox, oy, w, h):
+            return ox - (sensor_w - w) / 2.0, oy - (sensor_h - h) / 2.0
+        dx, dy = centre_error(ox, oy, w, h)
+        repaired = False
+        if fix and (abs(dx) > CENTRE_TOLERANCE_PX or abs(dy) > CENTRE_TOLERANCE_PX):
+            print(f'*** Camera ROI is NOT centred (offset {ox}, {oy}, size {w} x {h}, centre error {dx:+.0f}, {dy:+.0f} px): centring it again')
+            try:
+                self.camera.set_ROI(offset_x=self.centred_offset(sensor_w, w), offset_y=self.centred_offset(sensor_h, h))
+            except Exception as e:
+                print(f'*** could not centre the camera ROI: {e}')
+            again = self._read_hw_roi()
+            if again is not None:
+                ox, oy, w, h = again
+                dx, dy = centre_error(ox, oy, w, h)
+            repaired = True
+        centred = abs(dx) <= CENTRE_TOLERANCE_PX and abs(dy) <= CENTRE_TOLERANCE_PX
+        # spin boxes and software crops follow what the camera really has
+        for spin, value in ((self.spin_width, w), (self.spin_height, h)):
+            if spin.value() != value:
+                spin.blockSignals(True)
+                spin.setValue(value)
+                spin.blockSignals(False)
+        self._apply_software_crops(w, h)
+        text = f'Camera ROI (read from the camera): offset {ox}, {oy}, size {w} x {h}, centre error {dx:+.0f}, {dy:+.0f} px'
+        if repaired and centred:
+            text += ' - was off centre, centred again'
+        if not centred:
+            text += ' - NOT CENTRED'
+        self._show_status(text, warning=not centred)
+        return centred
+
+    def _show_status(self, text, warning=False):
+        label = getattr(self, 'label_actual', None)
+        if label is not None:
+            label.setText(text)
+            label.setStyleSheet('font-size: 8pt; color: ' + ('red' if warning else 'gray') + ';')
 
     def set_pixel_format(self, pixel_format):
         """Camera mode / bit depth."""

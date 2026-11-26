@@ -100,10 +100,10 @@ class Handler:
 
 def new_widget(cam):
     """The widget's methods bound to a plain object (no Qt needed)."""
-    w = types.SimpleNamespace(camera=cam, spin_width=Spin(0), spin_height=Spin(0), label_actual=Label(),
+    w = types.SimpleNamespace(camera=cam, spin_width=Spin(0), spin_height=Spin(0), label_actual=Label(), label_linearity=Label(),
                               stream_handler=Handler(), autofocus_controller=Handler(),
                               multipoint_controller=types.SimpleNamespace(crop_width=None, crop_height=None))
-    for name in ('update_roi', '_write_roi', 'check_roi', 'check_roi_if_idle', '_read_hw_roi', '_sensor_size', '_apply_software_crops', '_show_status',
+    for name in ('update_roi', '_write_roi', 'check_roi', 'check_roi_if_idle', 'show_linearity', '_read_hw_roi', '_sensor_size', '_apply_software_crops', '_show_status',
                  'centred_offset', 'valid_size'):
         f = CameraROIWidget.__dict__[name]
         setattr(w, name, f.__func__ if isinstance(f, staticmethod) else types.MethodType(f, w))
@@ -222,6 +222,42 @@ def test_no_check_inside_a_running_experiment():
     running[0] = False
     assert w.check_roi_if_idle() is True
     assert_centred_and_crops_equal(w, fake, 'idle')
+
+
+def test_gamma_readback_linear_and_not_linear():
+    cam, fake = new_camera()                         # camera_flir.open() switches GammaEnable off
+    for node in (fake_pyspin.BooleanNode('LUTEnable', False), fake_pyspin.FloatNode('Gamma', 0.8, 0.5, 4.0),
+                 fake_pyspin.FloatNode('BlackLevel', 0.0, 0.0, 100.0)):
+        fake.nodemap.add(node)
+    w = new_widget(cam)
+    before = (fake.nodemap.GetNode('GammaEnable').value, fake.nodemap.GetNode('LUTEnable').value, fake.nodemap.GetNode('BlackLevel').value)
+    assert cam.get_linearity_state() == dict(gamma_enabled=False, gamma=0.8, lut_enabled=False, black_level=0.0)
+    w.show_linearity()
+    assert 'gamma (read from the camera): off' in w.label_linearity.text and w.label_linearity.text.endswith('linear'), w.label_linearity.text
+    assert 'gray' in w.label_linearity.style and 'NOT' not in w.label_linearity.text
+    assert before == (fake.nodemap.GetNode('GammaEnable').value, fake.nodemap.GetNode('LUTEnable').value, fake.nodemap.GetNode('BlackLevel').value), 'read-only'
+    fake.nodemap.GetNode('GammaEnable').value = True                  # someone switched gamma on
+    w.show_linearity()
+    assert 'NOT LINEAR' in w.label_linearity.text and 'ON (value 0.80)' in w.label_linearity.text and 'red' in w.label_linearity.style, w.label_linearity.text
+    fake.nodemap.GetNode('GammaEnable').value = False
+    fake.nodemap.GetNode('LUTEnable').value = True                    # a lookup table is active
+    w.check_roi()                                                     # the ROI check refreshes the readout too
+    assert 'NOT LINEAR' in w.label_linearity.text and 'lookup table: ON' in w.label_linearity.text and 'red' in w.label_linearity.style
+
+
+def test_gamma_readback_missing_nodes_and_unsupported_cameras():
+    cam, fake = new_camera()                         # the fake has GammaEnable only: the other nodes read as unknown
+    w = new_widget(cam)
+    w.show_linearity()
+    assert 'gamma (read from the camera): off' in w.label_linearity.text and 'lookup table: unknown' in w.label_linearity.text
+    fake.nodemap.nodes.pop('GammaEnable')
+    w.show_linearity()
+    assert 'gamma state unknown' in w.label_linearity.text and 'NOT LINEAR' not in w.label_linearity.text
+    class NoGetter:
+        pass
+    w2 = new_widget(NoGetter())
+    w2.show_linearity()                                               # must not raise
+    assert 'cannot report' in w2.label_linearity.text and 'gray' in w2.label_linearity.style
 
 
 def _source(path, cls, func):

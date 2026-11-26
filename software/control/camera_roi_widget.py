@@ -34,6 +34,9 @@ class CameraROIWidget(QFrame):
         self.label_actual = QLabel('')
         self.label_actual.setStyleSheet('font-size: 8pt; color: gray;')
         self.label_actual.setWordWrap(True)
+        self.label_linearity = QLabel('')
+        self.label_linearity.setStyleSheet('font-size: 8pt; color: gray;')
+        self.label_linearity.setWordWrap(True)
 
         self.spin_width = QSpinBox()
         self.spin_width.setRange(16, sensor_w)
@@ -64,6 +67,8 @@ class CameraROIWidget(QFrame):
         else:
             self.check_roi(fix=True)    # an off-centre ROI left by an earlier session is centred now
 
+        self.show_linearity()
+
         self.dropdown_pixel_format = QComboBox()
         formats = ['MONO8', 'MONO12', 'MONO14', 'MONO16']
         if getattr(self.camera, 'is_color', None):
@@ -86,6 +91,7 @@ class CameraROIWidget(QFrame):
         grid.addWidget(self.dropdown_pixel_format, 1, 1)
         grid.addWidget(info, 2, 0, 1, 4)
         grid.addWidget(self.label_actual, 3, 0, 1, 4)
+        grid.addWidget(self.label_linearity, 4, 0, 1, 4)
         self.check_empty_frame = None
         if hasattr(self.camera, 'exposure_lag_fix'):      # FLIR: an exposure takes effect one frame late
             self.check_empty_frame = QCheckBox('Empty frame in between')
@@ -102,7 +108,7 @@ class CameraROIWidget(QFrame):
                 pass
             self.camera.exposure_lag_fix = self.check_empty_frame.isChecked()
             self.check_empty_frame.toggled.connect(self.set_empty_frame)
-            grid.addWidget(self.check_empty_frame, 4, 0, 1, 4)
+            grid.addWidget(self.check_empty_frame, 5, 0, 1, 4)
         grid.setRowStretch(grid.rowCount(), 1)
         self.setLayout(grid)
 
@@ -252,7 +258,40 @@ class CameraROIWidget(QFrame):
         if not centred:
             text += ' - NOT CENTRED'
         self._show_status(text, warning=not centred)
+        self.show_linearity()
         return centred
+
+    def show_linearity(self):
+        """Read gamma / lookup table / black level back from the camera and show them (read-only; nothing is written).
+        Gamma on or a lookup table on means the pixel values are NOT linear in the light: shown in red and printed with ***."""
+        label = getattr(self, 'label_linearity', None)
+        getter = getattr(self.camera, 'get_linearity_state', None)
+        if getter is None:
+            text, bad = 'Gamma: this camera class cannot report it (the software does not set it; the camera default applies).', False
+        else:
+            try:
+                st = getter()
+            except Exception as e:
+                st, text, bad = None, f'Gamma: could not be read from the camera ({e})', False
+            if st is not None:
+                def onoff(v):
+                    return 'unknown' if v is None else ('ON' if v else 'off')
+                gamma_on, lut_on = st.get('gamma_enabled'), st.get('lut_enabled')
+                bad = bool(gamma_on) or bool(lut_on)
+                text = 'Camera gamma (read from the camera): ' + onoff(gamma_on)
+                if gamma_on and st.get('gamma') is not None:
+                    text += f" (value {st['gamma']:.2f})"
+                text += ', lookup table: ' + onoff(lut_on)
+                if st.get('black_level') is not None:
+                    text += f", black level: {st['black_level']:g}"
+                if gamma_on is None:
+                    text += ' - gamma state unknown'
+                text += ' - NOT LINEAR' if bad else (' - linear' if gamma_on is False and not lut_on else '')
+        if bad:
+            print('*** ' + text)
+        if label is not None:
+            label.setText(text)
+            label.setStyleSheet('font-size: 8pt; color: ' + ('red' if bad else 'gray') + ';')
 
     def check_roi_if_idle(self):
         """check_roi, but only when no experiment / job is running: used when live view is switched on (live view is also restarted

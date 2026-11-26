@@ -1384,6 +1384,24 @@ class Camera(object):
             self._latched_us = None      # the free-running frames used their own exposure: the next real image needs a throw-away frame first
         return out
 
+    def get_linearity_state(self):
+        """Read-only: the camera settings that make pixel values non-linear in the light, as the camera has them now:
+        {'gamma_enabled': bool, 'gamma': float, 'lut_enabled': bool, 'black_level': float}. An entry is None if the camera does not
+        have the node or it cannot be read."""
+        nodemap = self.camera.GetNodeMap()
+
+        def read(kind, name):
+            try:
+                node = kind(nodemap.GetNode(name))
+                if node is not None and PySpin.IsReadable(node):
+                    return node.GetValue()
+            except Exception:
+                pass
+            return None
+        gamma_enabled, lut_enabled = read(PySpin.CBooleanPtr, 'GammaEnable'), read(PySpin.CBooleanPtr, 'LUTEnable')
+        return dict(gamma_enabled=None if gamma_enabled is None else bool(gamma_enabled), gamma=read(PySpin.CFloatPtr, 'Gamma'),
+                    lut_enabled=None if lut_enabled is None else bool(lut_enabled), black_level=read(PySpin.CFloatPtr, 'BlackLevel'))
+
     def get_ROI(self):
         """(offset_x, offset_y, width, height) as the camera has them right now. Read-only: the values come from the camera's
         nodes, not from the cached self.Width / self.OffsetX (those are what was last requested, not what the camera accepted)."""
